@@ -38,15 +38,31 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
       const retryDelay = 1000;
       
       try {
+        // Add debugging for API URL
+        console.log('🔍 DEBUG - API URL:', credentialsService['baseUrl']);
+        console.log('🔍 DEBUG - Window Location:', window.location.href);
+        console.log('🔍 DEBUG - Checking backend health...');
+        
         // Create AbortController for proper timeout handling
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
-        // Check if backend is responding with a simple health check
-        const response = await fetch(`${credentialsService['baseUrl']}/health`, {
-          method: 'GET',
-          signal: controller.signal
-        });
+        // First try proxied API path 
+        let response;
+        try {
+          console.log('🔍 Trying proxied health endpoint at /api/health');
+          response = await fetch(`/api/health`, {
+            method: 'GET',
+            signal: controller.signal
+          });
+        } catch (proxyError) {
+          console.log('🔍 Proxy endpoint failed, trying direct endpoint');
+          // If that fails, try direct URL
+          response = await fetch(`${credentialsService['baseUrl']}/health`, {
+            method: 'GET',
+            signal: controller.signal
+          });
+        }
         
         clearTimeout(timeoutId);
         
@@ -82,6 +98,11 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
           : 'Unknown error';
         console.log(`Backend not ready yet (attempt ${retryCount + 1}/${maxRetries}):`, errorMessage);
         
+        // Show toast with error message to help user diagnose
+        if (retryCount === 3) {
+          showToast(`Having trouble connecting to the backend server. Please check if the server is running. (${errorMessage})`, 'warning');
+        }
+        
         // Retry if we haven't exceeded max retries
         if (retryCount < maxRetries) {
           setTimeout(() => {
@@ -90,6 +111,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
         } else {
           console.warn('Backend not ready after maximum retries - skipping credential check');
           setBackendReady(false);
+          // Show final error message
+          showToast('Cannot connect to backend server. Please make sure the server is running on port 8181.', 'error');
         }
       }
     };
@@ -157,6 +180,20 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   return <div className="relative min-h-screen bg-white dark:bg-black overflow-hidden">
       {/* Fixed full-page background grid that doesn't scroll */}
       <div className="fixed inset-0 neon-grid pointer-events-none z-0"></div>
+      
+      {/* Connection status message */}
+      {!backendReady && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500/90 p-4 text-black text-center font-medium shadow-lg">
+          Connecting to backend server... Please make sure the server is running on port 8181.
+          <button 
+            onClick={() => window.location.reload()} 
+            className="ml-4 px-3 py-1 bg-black text-white rounded hover:bg-gray-800 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      
       {/* Floating Navigation */}
       <div className="fixed left-6 top-1/2 -translate-y-1/2 z-50">
         <SideNavigation />
